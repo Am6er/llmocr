@@ -31,6 +31,11 @@ public sealed class MineruServer : IDisposable
     // strip them so the plain log doesn't show "[A" tails and blank repaint lines.
     private static readonly Regex AnsiRegex =
         new(@"\x1b\[[0-9;?]*[A-Za-z]", RegexOptions.Compiled);
+    // A tqdm bar frame ends without a newline, so the next loguru line ("2026-… | INFO | …")
+    // can arrive glued to the bar's tail ("…84.73it/s]2026-… | INFO | …"). Force a break
+    // before every loguru timestamp so the log line lands on its own row.
+    private static readonly Regex LoguruStampRegex =
+        new(@"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\s*\|", RegexOptions.Compiled);
 
     public MineruServer(AppConfig cfg, Action<string> log)
     {
@@ -85,6 +90,8 @@ public sealed class MineruServer : IDisposable
         // so a bar update and the next real line can arrive glued together. Strip ANSI, then
         // split on CR/LF and emit each piece separately (un-glues bar from following log line).
         data = AnsiRegex.Replace(data, "");
+        // Un-glue a loguru line stuck to the end of a tqdm bar frame (no CR/LF between them).
+        data = LoguruStampRegex.Replace(data, "\n$0");
         foreach (var raw in data.Split('\r', '\n'))
         {
             string line = raw.TrimEnd();

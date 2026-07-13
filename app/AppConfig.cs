@@ -31,6 +31,11 @@ public class AppConfig
     /// Empty = MinerU default (ch). e.g. cyrillic / east_slavic / ch.</summary>
     public string Lang { get; set; } = "cyrillic";
 
+    /// <summary>Parse method (pipeline &amp; hybrid backends): "auto" | "txt" | "ocr".
+    /// auto = MinerU picks (txt if a text layer exists, else ocr); txt = use the PDF text layer;
+    /// ocr = ignore the text layer and read the rendered pixels (needed for broken-font PDFs).</summary>
+    public string Method { get; set; } = "auto";
+
     /// <summary>Hybrid parsing effort: "medium" | "high". Applies ONLY to hybrid-* backends.
     /// medium = fast, image/chart analysis off; high = higher accuracy + image/chart analysis, slower.</summary>
     public string Effort { get; set; } = "medium";

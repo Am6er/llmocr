@@ -34,6 +34,7 @@ public sealed class MainForm : Form
     private readonly ComboBox _cmbEffort = new();
     private readonly ComboBox _cmbImgAnalysis = new();
     private readonly ComboBox _cmbMirror = new();
+    private readonly ComboBox _cmbMethod = new();
     private readonly Button _btnProcess = new();
     private readonly Button _btnCancel = new();
     private readonly ProgressBar _progress = new();
@@ -55,7 +56,8 @@ public sealed class MainForm : Form
     private bool _userStoppedServer; // user pressed Stop -> don't auto-restart
 
     private static readonly string[] Supported =
-        { ".pdf", ".djvu", ".djv", ".docx", ".pptx", ".xlsx" };
+        { ".pdf", ".djvu", ".djv", ".docx", ".pptx", ".xlsx",
+          ".png", ".jpg", ".jpeg", ".jp2", ".webp", ".gif", ".bmp", ".tiff", ".tif" };
 
     public MainForm()
     {
@@ -235,6 +237,15 @@ public sealed class MainForm : Form
         _cmbMirror.SelectedIndexChanged += (_, _) => PersistUiState();
         Controls.Add(_cmbMirror);
 
+        // parse method (auto/txt/ocr) — for pipeline & hybrid backends
+        AddLabel("Метод:", x + 684, y + 62);
+        _cmbMethod.SetBounds(x + 748, y + 58, 120, 24);
+        _cmbMethod.DropDownStyle = ComboBoxStyle.DropDownList;
+        _cmbMethod.Items.AddRange(new object[] { "auto", "txt", "ocr" });
+        _cmbMethod.SelectedItem = _cmbMethod.Items.Contains(_cfg.Method) ? _cfg.Method : "auto";
+        _cmbMethod.SelectedIndexChanged += (_, _) => PersistUiState();
+        Controls.Add(_cmbMethod);
+
         _cmbBackend.SelectedIndexChanged += (_, _) => UpdateBackendDependentControls();
         UpdateBackendDependentControls();
 
@@ -348,6 +359,7 @@ public sealed class MainForm : Form
                 _ => "auto"
             };
             _cfg.ModelSource = _cmbMirror.SelectedItem?.ToString() ?? _cfg.ModelSource;
+            _cfg.Method = _cmbMethod.SelectedItem?.ToString() ?? _cfg.Method;
             _cfg.OutputModeName = _rbHtml.Checked ? "html" : "rag";
             _cfg.RagSaveImages = _chkSaveImages.Checked;
             _cfg.Save();
@@ -364,6 +376,7 @@ public sealed class MainForm : Form
         bool isVlm = b.StartsWith("vlm", StringComparison.OrdinalIgnoreCase);
         _cmbEffort.Enabled = isHybrid;
         _cmbImgAnalysis.Enabled = isHybrid || isVlm;
+        _cmbMethod.Enabled = !isVlm; // -m (auto/txt/ocr) is honoured by pipeline & hybrid only
         PersistUiState();
     }
 
@@ -371,9 +384,12 @@ public sealed class MainForm : Form
     {
         using var dlg = new OpenFileDialog
         {
-            Title = "Выберите файлы (PDF/DJVU/DOCX/PPTX/XLSX)",
+            Title = "Выберите файлы (PDF/DJVU/DOCX/PPTX/XLSX/картинки)",
             Multiselect = true,
-            Filter = "Документы (*.pdf;*.djvu;*.djv;*.docx;*.pptx;*.xlsx)|*.pdf;*.djvu;*.djv;*.docx;*.pptx;*.xlsx|Все файлы (*.*)|*.*"
+            Filter = "Все поддерживаемые|*.pdf;*.djvu;*.djv;*.docx;*.pptx;*.xlsx;*.png;*.jpg;*.jpeg;*.jp2;*.webp;*.gif;*.bmp;*.tiff;*.tif|"
+                   + "Документы (*.pdf;*.djvu;*.djv;*.docx;*.pptx;*.xlsx)|*.pdf;*.djvu;*.djv;*.docx;*.pptx;*.xlsx|"
+                   + "Картинки (*.png;*.jpg;*.jpeg;*.jp2;*.webp;*.gif;*.bmp;*.tiff;*.tif)|*.png;*.jpg;*.jpeg;*.jp2;*.webp;*.gif;*.bmp;*.tiff;*.tif|"
+                   + "Все файлы (*.*)|*.*"
         };
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
 

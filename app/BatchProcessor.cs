@@ -31,7 +31,8 @@ public sealed class BatchResult
 public sealed class BatchProcessor
 {
     private static readonly string[] Supported =
-        { ".pdf", ".djvu", ".djv", ".docx", ".pptx", ".xlsx" };
+        { ".pdf", ".djvu", ".djv", ".docx", ".pptx", ".xlsx",
+          ".png", ".jpg", ".jpeg", ".jp2", ".webp", ".gif", ".bmp", ".tiff", ".tif" };
 
     private readonly AppConfig _cfg;
     private readonly Action<string> _log;     // per-file progress  -> left pane
@@ -116,6 +117,7 @@ public sealed class BatchProcessor
             {
                 string pdf = src;
                 string ext = Path.GetExtension(src).ToLowerInvariant();
+                string mineruExt = ext == ".tif" ? ".tiff" : ext; // MinerU accepts "tiff", not "tif"
                 if (ext is ".djvu" or ".djv")
                 {
                     pdf = Path.Combine(pdfStage, name + ".pdf");
@@ -129,12 +131,12 @@ public sealed class BatchProcessor
                         continue;
                     }
                 }
-                else if (name != rawName)
+                else if (name != rawName || mineruExt != ext)
                 {
-                    // Original name is unsafe for MinerU's output folders (trailing space/dot,
-                    // reserved chars) — process a copy staged under the sanitized name.
-                    pdf = Path.Combine(pdfStage, name + ext);
-                    _log($"   имя санитизировано → \"{name}{ext}\"");
+                    // Stage a copy when the original name is unsafe for MinerU's output folders
+                    // (trailing space/dot, reserved chars) or the extension needs remapping (.tif).
+                    pdf = Path.Combine(pdfStage, name + mineruExt);
+                    if (name != rawName) _log($"   имя санитизировано → \"{name}{mineruExt}\"");
                     File.Copy(src, pdf, true);
                 }
 
@@ -245,6 +247,10 @@ public sealed class BatchProcessor
 
         bool isHybrid = _cfg.Backend.StartsWith("hybrid", StringComparison.OrdinalIgnoreCase);
         bool isVlm = _cfg.Backend.StartsWith("vlm", StringComparison.OrdinalIgnoreCase);
+
+        // -m (parse method) applies to pipeline & hybrid; "auto" is MinerU's default (omit).
+        if (!isVlm && (_cfg.Method is "txt" or "ocr"))
+            args += $" -m {_cfg.Method}";
 
         // --effort is honoured only by hybrid-* backends.
         if (isHybrid && !string.IsNullOrWhiteSpace(_cfg.Effort))

@@ -27,6 +27,10 @@ public sealed class MineruServer : IDisposable
     private readonly HashSet<string> _loggedTasks = new();
     private static readonly Regex TaskAccessRegex =
         new(@"/tasks/(?<id>[0-9a-fA-F-]{8,})[^""]*""\s+(?<code>\d{3})", RegexOptions.Compiled);
+    // tqdm progress bars redraw in place with ANSI escapes (e.g. ESC[A "cursor up");
+    // strip them so the plain log doesn't show "[A" tails and blank repaint lines.
+    private static readonly Regex AnsiRegex =
+        new(@"\x1b\[[0-9;?]*[A-Za-z]", RegexOptions.Compiled);
 
     public MineruServer(AppConfig cfg, Action<string> log)
     {
@@ -76,6 +80,10 @@ public sealed class MineruServer : IDisposable
     private void LogApi(string? data)
     {
         if (data == null) return;
+
+        // Strip tqdm's ANSI escapes + carriage returns; drop lines that are now blank.
+        data = AnsiRegex.Replace(data, "").Replace("\r", "").TrimEnd();
+        if (data.Length == 0) return;
 
         // Health-check requests are the lamp's job — never surface them.
         if (data.Contains("/health"))

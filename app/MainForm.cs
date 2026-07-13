@@ -514,10 +514,9 @@ public sealed class MainForm : Form
                 else _progress.Value = v;
             });
 
-            // Thermal GPU throttle for the batch (suspends the GPU workers when hot,
-            // never the process owning the API port so status polls keep working).
-            _throttle = new GpuThrottle(() => _server.ServerPid, _cfg.Port, _gpuMon,
-                () => _targetTempValue, m => Log(m, LogChannel.System));
+            // Thermal GPU throttle: suspends only the GPU compute process(es) when hot,
+            // never the API/render helpers — so nothing wedges and no deadlines are tripped.
+            _throttle = new GpuThrottle(_gpuMon, () => _targetTempValue, m => Log(m, LogChannel.System));
             _throttle.Start();
 
             var res = await proc.RunAsync(files, outDir, mode, progress, _cts.Token, ragSaveImages);

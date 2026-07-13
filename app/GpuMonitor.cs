@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
@@ -51,5 +52,34 @@ public sealed class GpuMonitor
         {
             return (null, null);
         }
+    }
+
+    /// <summary>PIDs of processes with an active CUDA context on the GPU (the actual compute
+    /// workers). The throttle suspends only these — never the API/render helper processes.</summary>
+    public async Task<List<int>> ReadComputePidsAsync(CancellationToken ct = default)
+    {
+        var pids = new List<int>();
+        try
+        {
+            var psi = new ProcessStartInfo(_exe,
+                "--query-compute-apps=pid --format=csv,noheader,nounits")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            using var p = Process.Start(psi);
+            if (p == null) return pids;
+
+            string outp = await p.StandardOutput.ReadToEndAsync(ct);
+            await p.WaitForExitAsync(ct);
+
+            foreach (var line in outp.Split('\n'))
+                if (int.TryParse(line.Trim(), out int pid) && pid > 0)
+                    pids.Add(pid);
+        }
+        catch { /* nvidia-smi unavailable */ }
+        return pids;
     }
 }

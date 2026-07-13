@@ -29,8 +29,23 @@ public sealed class GpuThrottle
     [DllImport("kernel32.dll")] private static extern bool Process32First(IntPtr snap, ref PROCESSENTRY32 e);
     [DllImport("kernel32.dll")] private static extern bool Process32Next(IntPtr snap, ref PROCESSENTRY32 e);
 
+    // Used to find the PID that owns the mineru-api TCP port so it is never suspended
+    // (keeps the HTTP endpoint responsive to the client's task-status polls).
+    [DllImport("iphlpapi.dll", SetLastError = true)]
+    private static extern uint GetExtendedTcpTable(IntPtr pTcpTable, ref int dwSize, bool sort,
+        int ipVersion, int tblClass, uint reserved);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MIB_TCPROW_OWNER_PID
+    {
+        public uint state, localAddr, localPort, remoteAddr, remotePort, owningPid;
+    }
+
     private const uint TH32CS_SNAPPROCESS = 0x00000002;
     private const uint PROCESS_SUSPEND_RESUME = 0x0800;
+    private const int AF_INET = 2;
+    private const int TCP_TABLE_OWNER_PID_ALL = 5;
+    private const uint MIB_TCP_STATE_LISTEN = 2;
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
     private struct PROCESSENTRY32
@@ -53,6 +68,7 @@ public sealed class GpuThrottle
     private const int MaxSuspendMs = 90_000; // safety: never keep the tree paused longer than this
 
     private readonly Func<int?> _rootPid;
+    private readonly int _serverPort;
     private readonly GpuMonitor _gpu;
     private readonly Func<int> _targetTempC;
     private readonly Action<string>? _log;
@@ -61,9 +77,10 @@ public sealed class GpuThrottle
     private Task? _loop;
     private volatile List<int> _suspended = new();
 
-    public GpuThrottle(Func<int?> rootPid, GpuMonitor gpu, Func<int> targetTempC, Action<string>? log = null)
+    public GpuThrottle(Func<int?> rootPid, int serverPort, GpuMonitor gpu, Func<int> targetTempC, Action<string>? log = null)
     {
         _rootPid = rootPid;
+        _serverPort = serverPort;
         _gpu = gpu;
         _targetTempC = targetTempC;
         _log = log;
@@ -102,7 +119,7 @@ public sealed class GpuThrottle
                 }
                 else if (!cooling && t > target)
                 {
-                    SetState(Tree(), suspend: true);
+                    SuspendWorkers();
                     cooling = true; suspendedAt = DateTime.UtcNow;
                     _log?.Invoke($"GPU {t}°C > цель {target}°C — приостанавливаю до остывания");
                 }
@@ -114,8 +131,8 @@ public sealed class GpuThrottle
                 }
                 else if (cooling)
                 {
-                    // still too hot: re-assert suspend on any newly spawned children
-                    SetState(Tree(), suspend: true);
+                    // still too hot: re-assert suspend on any newly spawned worker children
+                    SuspendWorkers();
                 }
 
                 if (ct.WaitHandle.WaitOne(PollMs)) break;
@@ -161,6 +178,43 @@ public sealed class GpuThrottle
                 foreach (int k in kids) queue.Enqueue(k);
         }
         return result;
+    }
+
+    /// <summary>Suspends the tree EXCEPT the process that owns the mineru-api TCP port,
+    /// so the HTTP server keeps answering the client's task-status polls while the GPU
+    /// worker processes are paused to cool down.</summary>
+    private void SuspendWorkers()
+    {
+        var pids = Tree();
+        int? keep = PortOwnerPid();
+        if (keep is int k) pids.RemoveAll(p => p == k);
+        SetState(pids, suspend: true);
+    }
+
+    /// <summary>PID listening on 127.0.0.1:_serverPort, or null if not found.</summary>
+    private int? PortOwnerPid()
+    {
+        int size = 0;
+        GetExtendedTcpTable(IntPtr.Zero, ref size, false, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0);
+        if (size <= 0) return null;
+        IntPtr buf = Marshal.AllocHGlobal(size);
+        try
+        {
+            if (GetExtendedTcpTable(buf, ref size, false, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0) != 0) return null;
+            int n = Marshal.ReadInt32(buf);
+            int rowSize = Marshal.SizeOf<MIB_TCPROW_OWNER_PID>();
+            IntPtr row = buf + 4;
+            for (int i = 0; i < n; i++)
+            {
+                var r = Marshal.PtrToStructure<MIB_TCPROW_OWNER_PID>(row);
+                int port = (int)(((r.localPort & 0xFF) << 8) | ((r.localPort >> 8) & 0xFF));
+                if (r.state == MIB_TCP_STATE_LISTEN && port == _serverPort) return (int)r.owningPid;
+                row += rowSize;
+            }
+        }
+        catch { /* fall through */ }
+        finally { Marshal.FreeHGlobal(buf); }
+        return null;
     }
 
     private void SetState(List<int> pids, bool suspend)

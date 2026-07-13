@@ -514,8 +514,9 @@ public sealed class MainForm : Form
                 else _progress.Value = v;
             });
 
-            // Thermal GPU throttle for the batch (suspends the mineru-api tree when hot).
-            _throttle = new GpuThrottle(() => _server.ServerPid, _gpuMon,
+            // Thermal GPU throttle for the batch (suspends the GPU workers when hot,
+            // never the process owning the API port so status polls keep working).
+            _throttle = new GpuThrottle(() => _server.ServerPid, _cfg.Port, _gpuMon,
                 () => _targetTempValue, m => Log(m, LogChannel.System));
             _throttle.Start();
 

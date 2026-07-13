@@ -1,0 +1,20 @@
+{
+  "MineruDir": "D:\\Claude\\mineru\\.venv\\Scripts",
+  "ApiExe": "mineru-api.exe",
+  "CliExe": "mineru.exe",
+  "Host": "127.0.0.1",
+  "Port": 8000,
+  "Backend": "hybrid-engine",
+  "Lang": "cyrillic",
+  "ModelSource": "huggingface",
+  "DdjvuExe": "D:\\Claude\\llmocr\\DjVuLibre\\ddjvu.exe",
+  "DdjvuDpi": 300,
+  "HealthTimeoutSec": 240,
+  "MathJaxUrl": "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js",
+  "ExtraServerArgs": "",
+  "ExtraClientArgs": "",
+  "RagSaveImages": false,
+  "ImageAnalysis": "auto",
+  "OutputModeName": "rag",
+  "Effort": "medium"
+}

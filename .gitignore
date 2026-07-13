@@ -1,0 +1,31 @@
+# ---- Build output (do not commit; app\bin may be in use at runtime) ----
+[Bb]in/
+[Oo]bj/
+[Pp]ublish/
+artifacts/
+
+# ---- Visual Studio / Rider / VS Code ----
+.vs/
+.idea/
+*.user
+*.suo
+*.userprefs
+*.DotSettings.user
+
+# ---- mdtest scratch output ----
+tools/mdtest/output/
+
+# ---- NuGet ----
+*.nupkg
+packages/
+
+# ---- OS junk ----
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.tmp
+
+# ---- Logs ----
+*.log
+*.err

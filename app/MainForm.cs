@@ -273,9 +273,9 @@ public sealed class MainForm : Form
 
         // --- GPU target-temperature slider (closed-loop: suspend the mineru tree while
         //     the GPU is hotter than target, resume once it cools; no admin) ---
-        _gpuLoadLabel.SetBounds(x + 345, y - 7, 250, 20);
+        _gpuLoadLabel.SetBounds(x + 345, y - 2, 250, 20);
         Controls.Add(_gpuLoadLabel);
-        _gpuLoad.SetBounds(x + 600, y - 15, w - 600, 28);
+        _gpuLoad.SetBounds(x + 600, y - 10, w - 600, 28);
         _gpuLoad.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         _gpuLoad.TickStyle = TickStyle.None; // no bottom ticks — they sprawl past the control and crowd the bar below
         _gpuLoad.Minimum = 50; _gpuLoad.Maximum = 90;

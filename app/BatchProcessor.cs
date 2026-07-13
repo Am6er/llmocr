@@ -44,6 +44,17 @@ public sealed class BatchProcessor
         _logSys = logSys;
     }
 
+    /// <summary>Makes a base filename safe for MinerU's output folders on Windows: replaces
+    /// invalid characters and trims trailing spaces/dots (Windows forbids those in dir names,
+    /// which otherwise breaks MinerU's os.makedirs -> WinError 3).</summary>
+    private static string SanitizeName(string name)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        string s = new string(name.Select(c => Array.IndexOf(invalid, c) >= 0 ? '_' : c).ToArray())
+            .TrimEnd(' ', '.');
+        return s.Length == 0 ? "file" : s;
+    }
+
     /// <summary>The final output file that a given input would produce — used to skip
     /// files that are already done. Must match where <see cref="RunAsync"/> writes results.</summary>
     private static string ExpectedOutputPath(string outDir, string name, OutputMode mode, bool ragSaveImages)
@@ -86,7 +97,8 @@ public sealed class BatchProcessor
         {
             ct.ThrowIfCancellationRequested();
             i++;
-            string name = Path.GetFileNameWithoutExtension(src);
+            string rawName = Path.GetFileNameWithoutExtension(src);
+            string name = SanitizeName(rawName); // trailing spaces/dots & reserved chars break MinerU's makedirs
 
             // Resume: skip files whose output already exists (non-empty).
             string expected = ExpectedOutputPath(outDir, name, mode, ragSaveImages);
@@ -116,6 +128,14 @@ public sealed class BatchProcessor
                         progress.Report((double)i / files.Count);
                         continue;
                     }
+                }
+                else if (name != rawName)
+                {
+                    // Original name is unsafe for MinerU's output folders (trailing space/dot,
+                    // reserved chars) — process a copy staged under the sanitized name.
+                    pdf = Path.Combine(pdfStage, name + ext);
+                    _log($"   имя санитизировано → \"{name}{ext}\"");
+                    File.Copy(src, pdf, true);
                 }
 
                 string mineruOut = Path.Combine(tmpRoot, "mineru", name);

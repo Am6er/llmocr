@@ -81,10 +81,19 @@ public sealed class MineruServer : IDisposable
     {
         if (data == null) return;
 
-        // Strip tqdm's ANSI escapes + carriage returns; drop lines that are now blank.
-        data = AnsiRegex.Replace(data, "").Replace("\r", "").TrimEnd();
-        if (data.Length == 0) return;
+        // tqdm redraws its bar in place: ANSI escapes + carriage returns, no trailing newline,
+        // so a bar update and the next real line can arrive glued together. Strip ANSI, then
+        // split on CR/LF and emit each piece separately (un-glues bar from following log line).
+        data = AnsiRegex.Replace(data, "");
+        foreach (var raw in data.Split('\r', '\n'))
+        {
+            string line = raw.TrimEnd();
+            if (line.Length > 0) LogApiLine(line);
+        }
+    }
 
+    private void LogApiLine(string data)
+    {
         // Health-check requests are the lamp's job — never surface them.
         if (data.Contains("/health"))
             return;

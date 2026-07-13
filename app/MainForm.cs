@@ -521,7 +521,7 @@ public sealed class MainForm : Form
             _throttle.Start();
 
             var res = await proc.RunAsync(files, outDir, mode, progress, _cts.Token, ragSaveImages);
-            Log($"=== Готово: успешно {res.Ok}, с ошибками {res.Failed} ===", LogChannel.Files);
+            Log($"=== Готово: успешно {res.Ok}, пропущено (уже были) {res.Skipped}, с ошибками {res.Failed} ===", LogChannel.Files);
             if (res.Failed > 0)
                 Log("Сбойные файлы: " + string.Join("; ", res.FailedFiles), LogChannel.Files);
         }

@@ -18,6 +18,7 @@ public sealed class BatchResult
 {
     public int Ok;
     public int Failed;
+    public int Skipped;
     public List<string> FailedFiles { get; } = new();
 }
 
@@ -41,6 +42,17 @@ public sealed class BatchProcessor
         _cfg = cfg;
         _log = logFiles;
         _logSys = logSys;
+    }
+
+    /// <summary>The final output file that a given input would produce — used to skip
+    /// files that are already done. Must match where <see cref="RunAsync"/> writes results.</summary>
+    private static string ExpectedOutputPath(string outDir, string name, OutputMode mode, bool ragSaveImages)
+    {
+        if (mode == OutputMode.Html)
+            return Path.Combine(outDir, name, name + ".html");
+        if (ragSaveImages)
+            return Path.Combine(outDir, name, name + ".md");
+        return Path.Combine(outDir, name + ".md"); // flat RAG
     }
 
     public static List<string> CollectInputs(string inputDir, bool recurse)
@@ -75,6 +87,17 @@ public sealed class BatchProcessor
             ct.ThrowIfCancellationRequested();
             i++;
             string name = Path.GetFileNameWithoutExtension(src);
+
+            // Resume: skip files whose output already exists (non-empty).
+            string expected = ExpectedOutputPath(outDir, name, mode, ragSaveImages);
+            if (File.Exists(expected) && new FileInfo(expected).Length > 0)
+            {
+                _log($"[{i}/{files.Count}] {Path.GetFileName(src)} — уже готово, пропускаю");
+                result.Skipped++;
+                progress.Report((double)i / files.Count);
+                continue;
+            }
+
             _log($"[{i}/{files.Count}] {Path.GetFileName(src)}");
 
             try

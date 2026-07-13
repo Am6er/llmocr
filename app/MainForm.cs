@@ -275,8 +275,9 @@ public sealed class MainForm : Form
         //     the GPU is hotter than target, resume once it cools; no admin) ---
         _gpuLoadLabel.SetBounds(x + 345, y + 8, 250, 20);
         Controls.Add(_gpuLoadLabel);
-        _gpuLoad.SetBounds(x + 600, y - 2, w - 600, 40);
+        _gpuLoad.SetBounds(x + 600, y, w - 600, 28);
         _gpuLoad.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        _gpuLoad.TickStyle = TickStyle.None; // no bottom ticks — they sprawl past the control and crowd the bar below
         _gpuLoad.Minimum = 50; _gpuLoad.Maximum = 90;
         _gpuLoad.TickFrequency = 5; _gpuLoad.LargeChange = 5; _gpuLoad.SmallChange = 1;
         _gpuLoad.Value = Math.Clamp(_cfg.TargetTempC, 50, 90);
@@ -292,7 +293,7 @@ public sealed class MainForm : Form
         UpdateGpuLabel();
 
         // --- progress ---
-        y += 40;
+        y += 44;
         _progress.SetBounds(x, y, w, 20);
         _progress.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         _progress.Minimum = 0; _progress.Maximum = 1000;

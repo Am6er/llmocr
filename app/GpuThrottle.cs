@@ -62,10 +62,12 @@ public sealed class GpuThrottle
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string szExeFile;
     }
 
-    private const int PollMs = 2500;       // how often we sample the temperature
+    private const int PollMs = 2500;       // how often we sample temp/utilization
     private const int Hysteresis = 3;      // resume once temp <= target - this (avoid flapping)
     private const int NoLimitC = 90;       // target >= this => never throttle
     private const int MaxSuspendMs = 90_000; // safety: never keep the tree paused longer than this
+    private const int UtilBusy = 25;       // only throttle when GPU utilization >= this (%)
+                                           // so CPU-bound phases (PDF render) are never paused
 
     private readonly Func<int?> _rootPid;
     private readonly int _serverPort;
@@ -110,14 +112,16 @@ public sealed class GpuThrottle
             while (!ct.IsCancellationRequested)
             {
                 int target = _targetTempC();
-                int? temp = await _gpu.ReadTempAsync(ct);
+                var (temp, util) = await _gpu.ReadTempUtilAsync(ct);
 
                 // No sensor or "no limit" -> make sure everything runs.
                 if (target >= NoLimitC || temp is not int t)
                 {
                     if (cooling) { ResumeTracked(); cooling = false; }
                 }
-                else if (!cooling && t > target)
+                // Throttle only while the GPU is actually computing AND too hot — never during
+                // CPU-bound phases (PDF render / IO), which carry their own wall-clock deadlines.
+                else if (!cooling && t > target && (util ?? 100) >= UtilBusy)
                 {
                     SuspendWorkers();
                     cooling = true; suspendedAt = DateTime.UtcNow;

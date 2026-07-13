@@ -130,6 +130,8 @@ public sealed class MineruServer : IDisposable
                 WorkingDirectory = _cfg.MineruDir
             };
             psi.EnvironmentVariables["MINERU_MODEL_SOURCE"] = _cfg.ModelSource;
+            if (_cfg.PdfRenderTimeoutSec > 0)
+                psi.EnvironmentVariables["MINERU_PDF_RENDER_TIMEOUT"] = _cfg.PdfRenderTimeoutSec.ToString();
             ApplyCudaEnv(psi.EnvironmentVariables);
 
             _log($"Запуск сервера: \"{psi.FileName}\" {psi.Arguments}");

@@ -47,6 +47,10 @@ public class AppConfig
     /// <summary>Path/command for nvidia-smi (used to read GPU temperature).</summary>
     public string NvidiaSmiPath { get; set; } = "nvidia-smi";
 
+    /// <summary>MinerU internal PDF page-render wall-clock timeout (seconds), raised well above
+    /// the 300 s default so GPU-cooldown pauses don't trip it. 0 = leave MinerU's default.</summary>
+    public int PdfRenderTimeoutSec { get; set; } = 1800;
+
     /// <summary>Currently selected / default model mirror (value of MINERU_MODEL_SOURCE).
     /// Must be one of <see cref="ModelSources"/>.</summary>
     public string ModelSource { get; set; } = "huggingface";

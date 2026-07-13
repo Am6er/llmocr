@@ -38,6 +38,7 @@ public sealed class MainForm : Form
     private readonly Button _btnProcess = new();
     private readonly Button _btnCancel = new();
     private readonly ProgressBar _progress = new();
+    private readonly Label _lblBook = new();       // per-book local progress + ETA
     private readonly TrackBar _gpuLoad = new();
     private readonly Label _gpuLoadLabel = new();
     private readonly SplitContainer _split = new();
@@ -48,6 +49,14 @@ public sealed class MainForm : Form
     private volatile int _targetTempValue = 75; // live target max GPU temp (°C)
     private volatile int _lastTemp = -1;        // last GPU temp read by the health timer, -1 = unknown
     private GpuThrottle? _throttle;
+
+    // per-book progress / ETA state (from mineru "Hybrid processing window X/Y" log lines)
+    private static readonly System.Text.RegularExpressions.Regex _rxWindow = new(
+        @"processing window\s+(\d+)/(\d+):\s*pages\s+(\d+)-(\d+)/(\d+)\s*\((\d+)\s*pages\)",
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    private DateTime _bookWinT0;   // time the first window of the current book was seen
+    private int _bookWin0 = -1;    // window number at T0 (baseline for the ETA average)
+    private int _bookWinLast = -1; // last window number seen (detects a new book: count resets)
 
     // health-monitor state
     private bool? _lastHealthy;
@@ -289,8 +298,16 @@ public sealed class MainForm : Form
         _progress.Minimum = 0; _progress.Maximum = 1000;
         Controls.Add(_progress);
 
+        // per-book local progress + ETA (decoded from mineru "processing window" log lines)
+        _lblBook.SetBounds(x, y + 22, w, 18);
+        _lblBook.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        _lblBook.ForeColor = Color.DimGray;
+        _lblBook.AutoEllipsis = true;
+        _lblBook.Text = "";
+        Controls.Add(_lblBook);
+
         // --- log (split: files | system) ---
-        y += 30;
+        y += 46;
         _split.SetBounds(x, y, w, Height - y - 56);
         _split.Orientation = Orientation.Vertical; // vertical splitter -> panes side by side
         _split.SplitterWidth = 6;
@@ -500,6 +517,7 @@ public sealed class MainForm : Form
 
         SetProcessing(true);
         _progress.Value = 0;
+        _bookWin0 = -1; _bookWinLast = -1; SetBookProgress("");
         _cts = new CancellationTokenSource();
         Log($"=== Старт: {files.Count} файлов, режим {(mode == OutputMode.Rag ? "RAG-md" : "HTML")}"
             + (mode == OutputMode.Rag && ragSaveImages ? " (+картинки, папка на файл)" : "")
@@ -572,11 +590,62 @@ public sealed class MainForm : Form
 
     private void Log(string msg, LogChannel channel = LogChannel.System)
     {
+        if (msg is not null) TryUpdateBookProgress(msg);
         var box = channel == LogChannel.Files ? _logFiles : _logSys;
         string line = DateTime.Now.ToString("HH:mm:ss") + "  " + msg + Environment.NewLine;
         if (box.IsDisposed) return;
         if (box.InvokeRequired) box.BeginInvoke(() => AppendLog(box, line));
         else AppendLog(box, line);
+    }
+
+    /// <summary>Decodes a mineru "…processing window X/Y: pages A-B/N (K pages)" line into a
+    /// Russian per-book progress caption under the bar, with a rough ETA extrapolated from the
+    /// average time per window seen so far for the current book.</summary>
+    private void TryUpdateBookProgress(string msg)
+    {
+        var m = _rxWindow.Match(msg);
+        if (!m.Success) return;
+
+        int win   = int.Parse(m.Groups[1].Value);
+        int winN  = int.Parse(m.Groups[2].Value);
+        int p1    = int.Parse(m.Groups[3].Value);
+        int p2    = int.Parse(m.Groups[4].Value);
+        int total = int.Parse(m.Groups[5].Value);
+        int k     = int.Parse(m.Groups[6].Value);
+
+        var now = DateTime.UtcNow;
+        string eta = "";
+        if (_bookWin0 < 0 || win < _bookWinLast)
+        {
+            // first window of the batch, or the counter reset -> a new book started
+            _bookWinT0 = now; _bookWin0 = win;
+        }
+        else if (win > _bookWin0)
+        {
+            double perWin = (now - _bookWinT0).TotalSeconds / (win - _bookWin0);
+            int remain = winN - win + 1; // current window + the ones after it
+            if (perWin > 0 && remain > 0)
+                eta = " · осталось ~" + FormatEta(perWin * remain);
+        }
+        _bookWinLast = win;
+
+        SetBookProgress($"Текущая книга: окно {win}/{winN} · страницы {p1}–{p2} из {total} ({k} стр.){eta}");
+    }
+
+    private static string FormatEta(double seconds)
+    {
+        if (seconds < 1) seconds = 1;
+        var t = TimeSpan.FromSeconds(seconds);
+        if (t.TotalHours >= 1) return $"{(int)t.TotalHours} ч {t.Minutes:00} мин";
+        if (t.TotalMinutes >= 1) return $"{t.Minutes} мин {t.Seconds:00} с";
+        return $"{t.Seconds} с";
+    }
+
+    private void SetBookProgress(string text)
+    {
+        if (_lblBook.IsDisposed) return;
+        if (_lblBook.InvokeRequired) _lblBook.BeginInvoke(() => _lblBook.Text = text);
+        else _lblBook.Text = text;
     }
 
     private static void AppendLog(TextBox box, string line)

@@ -42,6 +42,35 @@ public static class MarkdownTools
     private static readonly Regex StrayTextBeforeMuRegex =
         new(@"(?<![A-Za-z])t\s*e\s*x\s*t\s*(?=\\mu(?![A-Za-z]))", RegexOptions.Compiled);
 
+    // MinerU emits math with MathJax/LaTeX delimiters in some runs: display \[ … \]
+    // and inline \( … \). OpenCode's KaTeX only understands $ … $ (inline) and a
+    // block $$ on its own line … $$ on its own line. Normalise to that so equations
+    // render. (\left[ / \bigl( etc. never match — the bracket there isn't preceded
+    // by a backslash.)
+    private static readonly Regex DisplayBracketRegex =
+        new(@"\\\[(.+?)\\\]", RegexOptions.Singleline | RegexOptions.Compiled);
+    private static readonly Regex InlineParenRegex =
+        new(@"\\\((.+?)\\\)", RegexOptions.Compiled);
+    // A $$…$$ that sits entirely on one line (both delimiters + content, no newline
+    // between) — MinerU normally puts them on their own lines, but enforce it so the
+    // block always renders. The leading [^\n$] stops it matching an already-split
+    // "$$\n…\n$$" (newline right after the opener) or an inline $x$.
+    private static readonly Regex OneLineBlockRegex =
+        new(@"\$\$[ \t]*([^\n$][^\n]*?)[ \t]*\$\$", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Rewrites math delimiters to what OpenCode's KaTeX accepts: inline <c>\(…\)</c> → <c>$…$</c>,
+    /// display <c>\[…\]</c> and any one-line <c>$$…$$</c> → a block with <c>$$</c> alone on its own
+    /// line above and below the formula. Idempotent: already-correct <c>$…$</c> / block <c>$$</c> pass through.
+    /// </summary>
+    public static string NormalizeMathForKatex(string md)
+    {
+        md = DisplayBracketRegex.Replace(md, m => "\n$$\n" + m.Groups[1].Value.Trim() + "\n$$\n");
+        md = InlineParenRegex.Replace(md, m => "$" + m.Groups[1].Value.Trim() + "$");
+        md = OneLineBlockRegex.Replace(md, m => "\n$$\n" + m.Groups[1].Value.Trim() + "\n$$\n");
+        return md;
+    }
+
     /// <summary>
     /// Repairs micro-sign (µ) LaTeX artifacts from OCR so equations render:
     /// <c>\textmu</c> (invalid in math mode) and a leaked "text" fragment before
@@ -61,6 +90,9 @@ public static class MarkdownTools
     {
         // 0) Repair LaTeX artifacts (broken micro-sign µ) before anything else.
         md = FixLatexArtifacts(md);
+
+        // 0b) Normalise math delimiters to KaTeX form (\(..\)->$..$, \[..\]/$$..$$->block).
+        md = NormalizeMathForKatex(md);
 
         // 1) Convert every HTML <table> to a markdown pipe table.
         string result = TableRegex.Replace(md, m =>

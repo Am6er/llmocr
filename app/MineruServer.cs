@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -50,16 +51,13 @@ public sealed class MineruServer : IDisposable
     /// or null if we didn't launch it. Used by the GPU throttle to suspend/resume the tree.</summary>
     public int? ServerPid => (_proc is { HasExited: false }) ? _proc.Id : null;
 
-    /// <summary>Injects CUDA_PATH and prepends the toolkit bin dirs to PATH so the GPU
-    /// inference engines (lmdeploy/vLLM) find CUDA even when the parent didn't inherit it.</summary>
-    private void ApplyCudaEnv(System.Collections.Specialized.StringDictionary env)
+    /// <summary>Copies the shared MinerU environment (model mirror, CUDA paths, CPU/RAM
+    /// performance knobs — see <see cref="AppConfig.BuildMineruEnv"/>) onto a ProcessStartInfo.
+    /// The GPU engines need CUDA_PATH/PATH because the parent may not have inherited them.</summary>
+    private void ApplyMineruEnv(System.Collections.Specialized.StringDictionary env)
     {
-        if (!_cfg.HasCuda) return;
-        env["CUDA_PATH"] = _cfg.CudaPath;
-        string bin = System.IO.Path.Combine(_cfg.CudaPath, "bin");
-        string nvvp = System.IO.Path.Combine(_cfg.CudaPath, "libnvvp");
-        string cur = (env.ContainsKey("PATH") ? env["PATH"] : Environment.GetEnvironmentVariable("PATH")) ?? "";
-        env["PATH"] = $"{bin};{nvvp};{cur}";
+        foreach (var kv in _cfg.BuildMineruEnv())
+            env[kv.Key] = kv.Value;
     }
 
     public async Task<bool> IsHealthyAsync()
@@ -153,12 +151,12 @@ public sealed class MineruServer : IDisposable
                 RedirectStandardError = true,
                 WorkingDirectory = _cfg.MineruDir
             };
-            psi.EnvironmentVariables["MINERU_MODEL_SOURCE"] = _cfg.ModelSource;
-            if (_cfg.PdfRenderTimeoutSec > 0)
-                psi.EnvironmentVariables["MINERU_PDF_RENDER_TIMEOUT"] = _cfg.PdfRenderTimeoutSec.ToString();
-            ApplyCudaEnv(psi.EnvironmentVariables);
+            ApplyMineruEnv(psi.EnvironmentVariables);
 
             _log($"Запуск сервера: \"{psi.FileName}\" {psi.Arguments}");
+            _log("  env: " + string.Join("  ", _cfg.BuildMineruEnv()
+                     .Where(kv => kv.Key != "PATH")
+                     .Select(kv => $"{kv.Key}={kv.Value}")));
             try
             {
                 _proc = Process.Start(psi);

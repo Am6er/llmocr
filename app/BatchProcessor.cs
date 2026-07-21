@@ -268,14 +268,10 @@ public sealed class BatchProcessor
         if (!string.IsNullOrWhiteSpace(_cfg.ExtraClientArgs))
             args += " " + _cfg.ExtraClientArgs;
 
-        var env = new Dictionary<string, string> { ["MINERU_MODEL_SOURCE"] = _cfg.ModelSource };
-        if (_cfg.HasCuda)
-        {
-            env["CUDA_PATH"] = _cfg.CudaPath;
-            string bin = Path.Combine(_cfg.CudaPath, "bin");
-            string nvvp = Path.Combine(_cfg.CudaPath, "libnvvp");
-            env["PATH"] = $"{bin};{nvvp};{Environment.GetEnvironmentVariable("PATH")}";
-        }
+        // Same env as the server (model mirror, CUDA, render threads / window size / OMP):
+        // in --api-url mode the client still rasterizes pages locally, so the CPU/RAM knobs
+        // matter on both sides.
+        var env = _cfg.BuildMineruEnv();
         return await RunAsync(_cfg.CliExePath, args, _cfg.MineruDir, env, ct, prefix: "mineru");
     }
 

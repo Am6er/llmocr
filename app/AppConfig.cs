@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -56,6 +57,25 @@ public class AppConfig
     /// the 300 s default so GPU-cooldown pauses don't trip it. 0 = leave MinerU's default.</summary>
     public int PdfRenderTimeoutSec { get; set; } = 1800;
 
+    /// <summary>MINERU_PDF_RENDER_THREADS — CPU threads rasterizing PDF pages. MinerU's default
+    /// is 3, which starves the GPU on multi-core boxes; page bitmaps live in system RAM, so this
+    /// is a RAM/CPU knob, not a VRAM one. Keep at/below the physical core count. 0 = MinerU default.</summary>
+    public int PdfRenderThreads { get; set; } = 8;
+
+    /// <summary>MINERU_PROCESSING_WINDOW_SIZE — how many pages MinerU holds in memory per
+    /// processing window (default 64). Raising it cuts window flushes on long books at the cost
+    /// of system RAM. 0 = MinerU default.</summary>
+    public int ProcessingWindowSize { get; set; } = 192;
+
+    /// <summary>OMP_NUM_THREADS — OpenMP threads for the CPU-side pipeline ops.
+    /// 0 = leave unset (MinerU passes -1 = auto).</summary>
+    public int OmpNumThreads { get; set; } = 8;
+
+    // NOTE: deliberately NOT exposed — MINERU_VIRTUAL_VRAM_SIZE and MINERU_HYBRID_BATCH_RATIO.
+    // Both make MinerU batch more work into VRAM; on an 8 GB card overriding the auto-detected
+    // values (ratio 1) just turns a slow batch into an OOM crash mid-run. They are VRAM knobs,
+    // and no amount of system RAM changes that.
+
     /// <summary>Currently selected / default model mirror (value of MINERU_MODEL_SOURCE).
     /// Must be one of <see cref="ModelSources"/>.</summary>
     public string ModelSource { get; set; } = "huggingface";
@@ -90,6 +110,38 @@ public class AppConfig
     public string BaseUrl => $"http://{Host}:{Port}";
     [JsonIgnore]
     public string HealthUrl => $"{BaseUrl}/health";
+
+    /// <summary>
+    /// Builds the environment shared by every MinerU process we spawn (the mineru-api server
+    /// and each mineru CLI client): model mirror, CUDA paths, and the CPU/RAM performance knobs.
+    /// One place so the server and the client can't drift apart.
+    /// </summary>
+    public Dictionary<string, string> BuildMineruEnv()
+    {
+        var env = new Dictionary<string, string>
+        {
+            ["MINERU_MODEL_SOURCE"] = ModelSource
+        };
+
+        if (PdfRenderTimeoutSec > 0)
+            env["MINERU_PDF_RENDER_TIMEOUT"] = PdfRenderTimeoutSec.ToString();
+        if (PdfRenderThreads > 0)
+            env["MINERU_PDF_RENDER_THREADS"] = PdfRenderThreads.ToString();
+        if (ProcessingWindowSize > 0)
+            env["MINERU_PROCESSING_WINDOW_SIZE"] = ProcessingWindowSize.ToString();
+        if (OmpNumThreads > 0)
+            env["OMP_NUM_THREADS"] = OmpNumThreads.ToString();
+
+        if (HasCuda)
+        {
+            env["CUDA_PATH"] = CudaPath;
+            string bin = Path.Combine(CudaPath, "bin");
+            string nvvp = Path.Combine(CudaPath, "libnvvp");
+            env["PATH"] = $"{bin};{nvvp};{Environment.GetEnvironmentVariable("PATH")}";
+        }
+
+        return env;
+    }
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
